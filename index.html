@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Travel Planner Pro</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#1d5f7a">
+<style>
+:root{color-scheme:light;--bg:#edf2f4;--fg:#14232b;--card:#fff;--mut:#5d717b;--pri:#1d5f7a;--bd:#d3dee3;--warn:#b3261e;--ok:#2e7d4f}
+[data-t=dark]{color-scheme:dark;--bg:#0f171b;--fg:#e3edf1;--card:#172127;--mut:#8ba0aa;--pri:#5fb3d1;--bd:#27363d;--warn:#ff8a80;--ok:#6fcf97}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,Segoe UI,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--bd);display:flex;gap:12px;align-items:center;padding:10px 16px}
+header h1{font-size:18px;margin:0;flex:1;cursor:pointer}main{max-width:1100px;margin:0 auto;padding:16px}
+button,input,select,textarea{font:inherit;color:inherit;background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:6px 9px;max-width:100%}
+button{cursor:pointer}button.p{background:var(--pri);color:#fff;border-color:var(--pri)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--pri)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}.trip{cursor:pointer}.trip:hover{border-color:var(--pri)}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}nav button.on{background:var(--pri);color:#fff}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%}th{text-align:left;font-weight:600;color:var(--mut);font-size:13px;padding:4px}td{padding:3px;border-top:1px solid var(--bd)}td input,td select{width:100%;min-width:90px}
+.bar{height:8px;border-radius:4px;background:var(--bd);overflow:hidden}.bar i{display:block;height:100%;background:var(--ok)}
+.mut{color:var(--mut)}.warn{color:var(--warn)}.sum{display:flex;gap:18px;flex-wrap:wrap}.sum b{font-size:20px;display:block}
+.tl{display:flex;gap:10px;padding:4px 0;border-top:1px solid var(--bd)}.tl time{width:92px;color:var(--mut)}.chip{border-radius:6px;padding:0 7px;font-size:12px;color:#fff;align-self:center}
+.Ziel{background:#7a4fb3}.Flug{background:#1d5f7a}.Hotel{background:#2e7d4f}.Aktivität{background:#a35d10}
+dialog{border:1px solid var(--bd);border-radius:14px;background:var(--card);color:var(--fg);max-width:460px;width:92%}label{display:block;margin:8px 0 2px;color:var(--mut)}
+[data-t=dark] button.p,[data-t=dark] nav button.on{color:#0f171b}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}header h1 a{color:inherit;text-decoration:none}h2:focus{outline:none}a:focus-visible,.trip:focus-visible{outline:2px solid var(--pri)}
+@media(max-width:600px){main{padding:10px}}
+</style></head><body>
+<header><h1><a href="#" data-go="">✈ Travel Planner Pro</a></h1><span id="st" class="mut" role="status" aria-live="polite"></span><button id="gear" title="Einstellungen">⚙ Einstellungen</button></header>
+<main id="app"></main>
+<dialog id="dlg"><h3 style="margin-top:0">Einstellungen</h3><p id="fs" class="mut"></p>
+<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="p" id="b-open">Datenbank wählen …</button><button id="b-new">Neue Datei anlegen …</button><button id="b-save">Jetzt speichern</button><button id="b-load">Neu laden</button></div>
+<label for="me">Dein Name (für Änderungsprotokoll)</label><input id="me"><label for="th">Darstellung</label><select id="th"><option value="auto">Automatisch</option><option value="light">Hell</option><option value="dark">Dunkel</option></select>
+<p class="mut">Die Datenbank ist eine Excel-Datei (.xlsx). Lege sie in deinen geteilten OneDrive-Ordner; jede Person wählt ihren lokalen Speicherort hier selbst.</p>
+<div style="text-align:right"><button id="b-close">Schließen</button></div></dialog>
+<input type="file" id="fi" accept=".xlsx" hidden>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script>
+const $=s=>document.querySelector(s),uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2),esc=x=>String(x??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'),dt=x=>new Date(x).toLocaleDateString('de-DE',{timeZone:'UTC'});
+const S={Reisen:['title','description','startDate','endDate','budget','modBudget','modTravelers','modTips','modPacking','modSettlement'],
+Mitreisende:['tripId','name'],Stops:['tripId','city','country','notes','arrival','departure'],
+Fluege:['tripId','flightNo','airline','origin','destination','departureAt','arrivalAt','price','currency','included'],
+Hotels:['tripId','name','address','checkIn','checkOut','price','currency','notes'],
+Aktivitaeten:['tripId','title','date','time','price','currency','rating','status'],
+Ausgaben:['tripId','description','category','amount','currency','rate','amountBase','paidById','date'],
+Packpunkte:['tripId','title','category','quantity','checked'],Tipps:['tripId','title','description','category','country','city','usefulness','favorite','tags']};
+const COMMON=['id','updatedAt','updatedBy','deleted'],BOOL=['deleted','checked','favorite','modBudget','modTravelers','modTips','modPacking','modSettlement','included'];
+const KAT=['Kleidung','Technik','Dokumente','Hygiene','Sonstiges'],TIPK=['Sehenswürdigkeiten','Restaurants','Unterkunft','Transport','Sicherheit','Geld & Bezahlen','Sprache','Shopping','Packtipps','Geheimtipps','Sonstiges'];
+let db={},fx={EUR:1},fxd='',h=null,lastMod=0,tid=null,tab='Übersicht',timer,dirty=false,needPerm=false,fname='',err='',saving=false,ver=0,sr;
+Object.keys(S).forEach(k=>db[k]=[]);
+const me=()=>localStorage.me||'';const M=n=>(+n||0).toLocaleString('de-DE',{style:'currency',currency:'EUR'});
+const eur=(a,c,r)=>!a?0:(c&&c!='EUR'?a/(r||fx[c]||1):+a);
+const nights=(a,b)=>a&&b?Math.max(0,Math.round((new Date(b)-new Date(a))/864e5)):0;
+const live=(s,t)=>db[s].filter(r=>!r.deleted&&(!t||r.tripId==t));
+function touch(r){r.updatedAt=Date.now();r.updatedBy=me();dirty=true;ver++;clearTimeout(timer);timer=setTimeout(save,1500);status()}
+function add(s,o){const r={id:uid(),updatedAt:0,updatedBy:'',deleted:false,...o};db[s].push(r);touch(r);return r}
+// ---------- Excel-Speicher ----------
+const TYPES=[{description:'Excel',accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}];
+const idb=(m,v)=>new Promise(r=>{const q=indexedDB.open('tp',1);q.onupgradeneeded=()=>q.result.createObjectStore('k');q.onerror=()=>r();q.onsuccess=()=>{const o=q.result.transaction('k',m=='get'?'readonly':'readwrite').objectStore('k'),x=m=='get'?o.get('h'):o.put(v,'h');x.onsuccess=()=>r(x.result);x.onerror=()=>r()}});
+function parse(buf){const wb=XLSX.read(buf),out={};for(const k in S){out[k]=XLSX.utils.sheet_to_json(wb.Sheets[k]||{}).map(r=>{BOOL.forEach(b=>{if(b in r)r[b]=r[b]===true||r[b]==='TRUE'||r[b]===1});r.updatedAt=+r.updatedAt||0;return r})}return out}
+function merge(rem){let ch=false;for(const k in S){const m=new Map(db[k].map(r=>[r.id,r]));rem[k].forEach(r=>{const l=m.get(r.id);if(!l){db[k].push(r);ch=true}else if(r.updatedAt>l.updatedAt){Object.assign(l,r);ch=true}})}return ch}
+async function load(){if(!h)return;try{const f=await h.getFile();lastMod=f.lastModified;fname=f.name;const d=parse(await f.arrayBuffer());for(const k in S)db[k]=d[k];dirty=false;needPerm=false;err=''}
+ catch(e){if(e.name=='NotAllowedError')needPerm=true;else err='Datei konnte nicht gelesen werden – '+e.message}
+ render()}
+function bytes(){const wb=XLSX.utils.book_new();for(const k in S){const hd=[...COMMON,...S[k]],rows=db[k].map(r=>{const o={};hd.forEach(c=>{if(r[c]!==undefined)o[c]=r[c]});return o});XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows,{header:hd}),k)}return XLSX.write(wb,{type:'array',bookType:'xlsx'})}
+async function save(){if(!dirty||saving)return;if(!h){status();return}
+ saving=true;const v=ver;let ch=false;
+ try{const f=await h.getFile();if(f.lastModified>lastMod+1)ch=merge(parse(await f.arrayBuffer()));
+  const w=await h.createWritable();await w.write(bytes());await w.close();lastMod=(await h.getFile()).lastModified;if(v==ver)dirty=false;err='';needPerm=false;stamp=new Date().toLocaleTimeString('de-DE')}
+ catch(e){if(e.name=='NotAllowedError')needPerm=true;else err='Speichern nicht möglich – '+e.message}
+ finally{saving=false}
+ status();if(ch)safeRender();if(dirty&&!err&&!needPerm){clearTimeout(timer);timer=setTimeout(save,1500)}}
+let stamp='';
+function status(){const s=$('#st');if(needPerm){if(!$('#perm'))s.innerHTML='<button id="perm">Dateizugriff erlauben</button>';return}
+ s.textContent=err||(!window.XLSX?'Excel-Bibliothek nicht geladen':h?`${fname} · ${dirty?'ungespeichert':'gespeichert'+(stamp?' '+stamp:'')}`:'Keine Datenbank verbunden')}
+async function pick(neu){try{h=neu?await showSaveFilePicker({suggestedName:'reiseplaner.xlsx',types:TYPES}):(await showOpenFilePicker({types:TYPES}))[0];await idb('set',h);fname=h.name;needPerm=false;err='';if(neu){dirty=true;await save()}else await load();status();render()}catch(e){if(e.name!='AbortError'){err='Datei konnte nicht geöffnet werden – '+e.message;status()}}}
+function download(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([bytes()]));a.download=fname||'reiseplaner.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4e3);dirty=false;status()}
+// ---------- Wechselkurse ----------
+async function loadFx(){let c;try{c=JSON.parse(localStorage.fx);if(c&&c.fx){fx={EUR:1,...c.fx};fxd=c.fxd}}catch{c=null}
+ if(!c||Date.now()-(c.t||0)>432e5)try{const r=await fetch('https://api.frankfurter.dev/v1/latest?base=EUR');if(!r.ok)throw 0;const j=await r.json();if(!j.rates)throw 0;fx={EUR:1,...j.rates};fxd=j.date;localStorage.fx=JSON.stringify({fx,fxd,t:Date.now()})}catch{}
+ safeRender()}
+// ---------- Felder ----------
+const COL={Mitreisende:[['name','Name']],
+Stops:[['city','Stadt'],['country','Land'],['arrival','Ankunft','date'],['departure','Abreise','date'],['notes','Notizen']],
+Fluege:[['flightNo','Flugnr.'],['airline','Airline'],['origin','Von'],['destination','Nach'],['departureAt','Abflug','datetime-local'],['arrivalAt','Ankunft','datetime-local'],['price','Preis','number'],['currency','Whg.','cur'],['included','Preis im Flug darüber enthalten','check']],
+Hotels:[['name','Hotel'],['address','Adresse'],['checkIn','Check-in','date'],['checkOut','Check-out','date'],['_n','Nächte','calc',r=>nights(r.checkIn,r.checkOut)],['price','Preis','number'],['currency','Whg.','cur'],['notes','Notizen']],
+Aktivitaeten:[['title','Aktivität'],['date','Datum','date'],['time','Uhrzeit','time'],['price','Preis','number'],['currency','Whg.','cur'],['rating','Sterne 0–5','number',[0,5]],['status','Status','sel',['Geplant','Gebucht','Erledigt']]],
+Ausgaben:[['description','Beschreibung'],['category','Kategorie','sel',['Mietwagen','ÖPNV','Restaurant','Versicherung','Sonstiges']],['amount','Betrag','number'],['currency','Whg.','cur'],['_e','in Euro','calc',r=>M(r.amountBase)],['paidById','Bezahlt von','trav'],['date','Datum','date']],
+Packpunkte:[['title','Gegenstand'],['category','Kategorie','sel',KAT],['quantity','Menge','number',[0]],['checked','Gepackt','check']],
+Tipps:[['title','Titel'],['category','Kategorie','sel',TIPK],['country','Land'],['city','Stadt'],['usefulness','Nützlich 1–5','number',[1,5]],['favorite','Favorit','check'],['tags','Tags'],['description','Beschreibung']]};
+function fld(c,v,t,d){const[k,l,ty,o]=c,a=`data-k="${k}" aria-label="${esc(l)}" ${d?'disabled':''}`;let opts;const mm=ty=='number'?'step="any"'+(o&&o[0]!=null?' min="'+o[0]+'"':'')+(o&&o[1]!=null?' max="'+o[1]+'"':''):'';
+ if(ty=='cur')opts=[...new Set([...Object.keys(fx),...(v?[v]:[])])].sort().map(x=>[x,x]);else if(ty=='sel')opts=o.map(x=>[x,x]);else if(ty=='trav')opts=[['','–'],...live('Mitreisende',t).map(x=>[x.id,x.name])];
+ if(opts){const cur=v||(ty=='cur'?'EUR':'');return`<select ${a}>${opts.map(([x,y])=>`<option value="${esc(x)}" ${x==cur?'selected':''}>${esc(y)}</option>`).join('')}</select>`}
+ if(ty=='check')return`<input type="checkbox" ${a} ${v?'checked':''}>`;
+ return`<input type="${ty||'text'}" ${mm} ${a} value="${esc(v)}" placeholder="${l}">`}
+function table(s,t){const cols=COL[s],rows=live(s,t),dflt=s=='Stops'?{country:(db.Reisen.find(x=>x.id==t)||{}).title,arrival:[...rows].reverse().map(x=>x.departure).find(Boolean)}:{};
+ return`<div class="card tw"><table data-s="${s}"><tr>${cols.map(c=>`<th scope="col">${c[1]}</th>`).join('')}<th scope="col"><span class="sr">Aktionen</span></th></tr>
+ <tr class="new">${cols.map(c=>`<td>${c[2]=='calc'?'':fld(c,dflt[c[0]]??'',t)}</td>`).join('')}<td><button class="p" data-add="${s}" aria-label="Hinzufügen" title="Hinzufügen">+</button></td></tr>
+ ${rows.map((r,i)=>`<tr data-id="${esc(r.id)}">${cols.map(c=>`<td>${c[2]=='calc'?c[3](r):fld(c,r[c[0]],t,s=='Fluege'&&((c[0]=='price'&&r.included)||(c[0]=='included'&&i==0&&!r.included)))}</td>`).join('')}<td><button data-del="${s}|${esc(r.id)}" title="Löschen" aria-label="Eintrag löschen">✕</button></td></tr>`).join('')}</table>${rows.length?'':'<p class="mut">Noch keine Einträge – oben ausfüllen und + wählen.</p>'}</div>`}
+// ---------- Berechnungen ----------
+function costs(t){const T=db.Reisen.find(r=>r.id==t&&!r.deleted),ex=live('Ausgaben',t);
+ const auto=[...live('Fluege',t),...live('Hotels',t),...live('Aktivitaeten',t)].reduce((s,r)=>s+(r.included?0:eur(r.price,r.currency)),0);
+ const total=ex.reduce((s,r)=>s+(+r.amountBase||0),0)+auto,tr=live('Mitreisende',t),paid={},share={};
+ tr.forEach(p=>{paid[p.id]=0;share[p.id]=0});
+ ex.forEach(r=>{if(paid[r.paidById]!==undefined)paid[r.paidById]+=+r.amountBase||0;tr.forEach(p=>share[p.id]+=(+r.amountBase||0)/tr.length)});
+ const bal=tr.map(p=>({n:p.name,c:Math.round((paid[p.id]-share[p.id])*100)})),cr=bal.filter(b=>b.c>0).map(b=>({...b})).sort((a,b)=>b.c-a.c),de=bal.filter(b=>b.c<0).map(b=>({...b})).sort((a,b)=>a.c-b.c),tf=[];
+ for(let i=0,j=0;i<de.length&&j<cr.length;){const p=Math.min(-de[i].c,cr[j].c);tf.push(`${de[i].n} muss ${cr[j].n} ${M(p/100)} bezahlen`);de[i].c+=p;cr[j].c-=p;if(!de[i].c)i++;if(!cr[j].c)j++}
+ return{T,total,tr,paid,share,tf,budget:+(T&&T.budget)||0}}
+function sumBar(t){const c=costs(t),T=c.T,pct=c.budget?Math.min(100,c.total/c.budget*100):0;
+ return`<div id="sum" class="card sum"><div><b>${M(c.total)}</b>Gesamtkosten</div>${T.modBudget&&c.budget?`<div style="min-width:200px;flex:1"><b class="${c.total>c.budget?'warn':''}">${M(c.budget-c.total)}</b>verfügbar von ${M(c.budget)}<div class="bar" role="progressbar" aria-label="Budget verbraucht" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}"><i style="width:${pct}%;${c.total>c.budget?'background:var(--warn)':''}"></i></div></div>`:''}
+ ${T.modTravelers?c.tr.map(p=>`<div><b>${M(c.share[p.id])}</b>${esc(p.name)} (verlegt ${M(c.paid[p.id])})</div>`).join(''):''}
+ ${T.modTravelers&&T.modSettlement?`<div><b>${c.tf.length}</b>offene Ausgleiche</div>`:''}</div>`}
+const stopLbl=(r,t)=>{const T=db.Reisen.find(x=>x.id==t)||{},c=(r.country||'').trim();return c&&c.toLowerCase()!=(T.title||'').trim().toLowerCase()?`${r.city||''}, ${c}`:(r.city||c)};
+function timeline(t){const it=[...live('Stops',t).map(r=>[r.arrival,'Ziel',stopLbl(r,t)]),...live('Fluege',t).map(r=>[(r.departureAt||'').slice(0,10),'Flug',`${r.origin||'?'} → ${r.destination||'?'} ${r.flightNo||''}`]),
+ ...live('Hotels',t).map(r=>[r.checkIn,'Hotel',`${r.name} (${nights(r.checkIn,r.checkOut)} Nächte)`]),...live('Aktivitaeten',t).map(r=>[r.date,'Aktivität',r.title])].filter(x=>x[0]).sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+ return it.length?it.map(x=>`<div class="tl"><time>${dt(x[0])}</time><span class="chip ${x[1]}">${x[1]}</span>${esc(x[2])}</div>`).join(''):'<p class="mut">Der Zeitstrahl füllt sich, sobald Ziele, Flüge, Hotels oder Aktivitäten ein Datum haben.</p>'}
+// ---------- Ansichten ----------
+const MODS=[['modBudget','Budget'],['modTravelers','Mitreisende'],['modSettlement','Ausgleichsrechner'],['modPacking','Packliste'],['modTips','Tipps & Tricks']];
+function dash(){const ts=live('Reisen').sort((a,b)=>String(a.startDate||'').localeCompare(String(b.startDate||'')));
+ return`<div class="card"><b>Neue Reise</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><input id="nt" placeholder="Reisetitel"><input id="ns" type="date"><input id="ne" type="date"><button class="p" id="addtrip">Reise anlegen</button></div></div>
+ <div class="grid">${ts.map(r=>`<div class="card trip" data-go="${esc(r.id)}" role="button" tabindex="0"><b>${esc(r.title)}</b><div class="mut">${r.startDate?dt(r.startDate):'ohne Datum'} · ${nights(r.startDate,r.endDate)} Nächte</div><div>${M(costs(r.id).total)}</div></div>`).join('')||'<p class="mut">Lege deine erste Reise an.</p>'}</div>`}
+function tripView(){const c=costs(tid),T=c.T;if(!T){tid=null;return dash()}
+ const tabs=['Übersicht','Reise','Ziele',...(T.modTravelers?['Mitreisende']:[]),'Flüge','Hotels','Aktivitäten','Kosten',...(T.modPacking?['Packliste']:[]),...(T.modTips?['Tipps']:[])];if(!tabs.includes(tab))tab='Übersicht';
+ const map={Ziele:'Stops',Mitreisende:'Mitreisende',Flüge:'Fluege',Hotels:'Hotels',Aktivitäten:'Aktivitaeten',Kosten:'Ausgaben',Packliste:'Packpunkte',Tipps:'Tipps'};let body='';
+ if(tab=='Übersicht')body=`<div class="card"><b>Zeitstrahl</b>${timeline(tid)}</div>${T.modTravelers&&T.modSettlement?`<div class="card"><b>Ausgleich</b>${c.tf.length?c.tf.map(x=>`<div>${esc(x)}</div>`).join(''):'<p class="mut">Alles ausgeglichen – oder noch keine Ausgaben mit „Bezahlt von“.</p>'}<p class="mut">Verteilung: gleichmäßig auf alle Mitreisenden; berücksichtigt werden Kosten-Einträge.</p></div>`:''}`;
+ else if(tab=='Reise')body=`<div class="card" data-id="${esc(T.id)}" data-s="Reisen">${[['title','Titel'],['description','Beschreibung'],['startDate','Beginn','date'],['endDate','Ende','date'],...(T.modBudget?[['budget','Budget (€)','number']]:[])].map(f=>`<label>${f[1]}</label>${fld(f,T[f[0]])}`).join('')}
+ <label>Module dieser Reise</label>${MODS.map(([k,l])=>`<div><label style="display:inline;margin:0"><input type="checkbox" data-k="${k}" ${T[k]?'checked':''}> ${l}</label></div>`).join('')}<p><button data-del="Reisen|${esc(T.id)}">Reise löschen</button></p></div>`;
+ else{body=(tab=='Kosten'||tab=='Aktivitäten'||tab=='Hotels'||tab=='Flüge')&&fxd?`<p class="mut">Wechselkurse vom ${fxd} (EZB). Standardwährung ist Euro.</p>`:'';body+=table(map[tab],tid)}
+ return`<p><a href="#" data-go="" style="color:var(--pri)">← Alle Reisen</a></p><h2 tabindex="-1" style="margin:4px 0">${esc(T.title)}</h2>${sumBar(tid)}<nav aria-label="Bereiche">${tabs.map(x=>`<button data-tab="${x}" class="${x==tab?'on':''}"${x==tab?' aria-current="page"':''}>${x}</button>`).join('')}</nav>${body}`}
+function render(sel){$('#app').innerHTML=tid?tripView():dash();status();if(sel){const e=$(sel);if(e)e.focus({preventScroll:true})}}
+function safeRender(){const a=document.activeElement;if(a&&a!==document.body&&$('#app').contains(a)&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)){clearTimeout(sr);sr=setTimeout(safeRender,3000);return}render()}
+// ---------- Ereignisse ----------
+function fix(s,r){if(s=='Ausgaben'){if(r.currency&&r.currency!='EUR'){if(!r.rate||r._c)r.rate=fx[r.currency]||1}else r.rate=1;delete r._c;r.amountBase=Math.round(eur(+r.amount,r.currency,r.rate)*100)/100}}
+function num(i){if(i.value==='')return'';let v=+i.value;if(i.min!==''&&v<+i.min)v=+i.min;if(i.max!==''&&v>+i.max)v=+i.max;i.value=v;return v}
+function refresh(s,r,i,row){
+ if(s=='Reisen'){if(i.dataset.k.startsWith('mod'))return render(`[data-k="${i.dataset.k}"]`);const hh=$('#app h2');if(hh)hh.textContent=r.title||''}
+ const sm=$('#sum');if(sm&&tid)sm.outerHTML=sumBar(tid);
+ (COL[s]||[]).forEach((c,n)=>{if(c[2]=='calc'&&row.children[n])row.children[n].textContent=c[3](r)});
+ if(s=='Fluege'&&i.dataset.k=='included'){const p=row.querySelector('[data-k="price"]');if(p){p.disabled=!!r.included;if(r.included)p.value=''}}
+ status()}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-go],[data-tab],[data-add],[data-del],#addtrip');if(!t)return;e.preventDefault();let foc='';
+ if(t.id=='addtrip'){const n=$('#nt').value.trim();if(!n)return;const r=add('Reisen',{title:n,startDate:$('#ns').value,endDate:$('#ne').value,modBudget:true,modTravelers:true,modSettlement:true,modPacking:true,modTips:true});tid=r.id;tab='Übersicht';foc='#app h2'}
+ else if('go'in t.dataset){tid=t.dataset.go||null;tab='Übersicht';if(tid)foc='#app h2'}else if(t.dataset.tab){tab=t.dataset.tab;foc=`[data-tab="${tab}"]`}
+ else if(t.dataset.add){const s=t.dataset.add,o={tripId:tid},ins=[...t.closest('tr').querySelectorAll('[data-k]')];ins.forEach(i=>o[i.dataset.k]=i.type=='checkbox'?i.checked:i.type=='number'?num(i):i.type=='text'?i.value.trim():i.value);
+  if(!ins.some(i=>i.tagName=='INPUT'&&i.type!='checkbox'&&i.value.trim())||(s=='Stops'&&!o.city))return;if(s=='Fluege'&&o.included){if(live('Fluege',tid).length)o.price='';else o.included=false}const r=add(s,o);fix(s,r);foc=`table[data-s="${s}"] tr.new [data-k]`}
+ else if(t.dataset.del){const[s,...q]=t.dataset.del.split('|'),id=q.join('|');if(s=='Reisen'&&!confirm('Reise wirklich löschen?'))return;const r=db[s].find(x=>x.id==id);if(!r)return;r.deleted=true;touch(r);
+  if(s=='Reisen')tid=null;else{if(s=='Fluege'){const f=live('Fluege',tid)[0];if(f&&f.included){f.included=false;touch(f)}}foc=`table[data-s="${s}"] tr.new [data-k]`}}
+ render(foc)});
+document.addEventListener('keydown',e=>{const t=e.target;
+ if(e.key=='Enter'&&t.tagName=='INPUT'&&t.type!='checkbox'){const b=t.id=='nt'?$('#addtrip'):t.closest('tr.new')&&t.closest('tr').querySelector('[data-add]');if(b){e.preventDefault();b.click()}}
+ else if((e.key=='Enter'||e.key==' ')&&t.matches&&t.matches('.trip')){e.preventDefault();t.click()}});
+document.addEventListener('change',e=>{const i=e.target.closest('[data-k]'),row=i&&i.closest('[data-id]');if(!row)return;const s=row.closest('[data-s]').dataset.s,r=db[s].find(x=>x.id==row.dataset.id);if(!r)return;
+ r[i.dataset.k]=i.type=='checkbox'?i.checked:i.type=='number'?num(i):i.value;if(i.dataset.k=='currency'&&s=='Ausgaben')r._c=1;if(s=='Fluege'&&r.included)r.price='';fix(s,r);touch(r);refresh(s,r,i,row)});
+const dlg=$('#dlg');$('#gear').onclick=()=>{$('#me').value=me();$('#th').value=localStorage.th||'auto';$('#fs').textContent=window.showOpenFilePicker?(h?'Verbunden: '+fname:'Noch keine Datei verbunden.'):'Dieser Browser kann Dateien nicht direkt speichern (Chrome oder Edge am Desktop verwenden). Es gilt: Datei öffnen und „Jetzt speichern“ lädt die .xlsx herunter.';dlg.showModal()};
+dlg.addEventListener('close',()=>{localStorage.me=$('#me').value.trim();localStorage.th=$('#th').value;theme()});$('#b-close').onclick=()=>dlg.close();
+$('#b-open').onclick=()=>window.showOpenFilePicker?pick(false):$('#fi').click();$('#b-new').onclick=()=>window.showSaveFilePicker?pick(true):alert('Bitte Chrome oder Edge am Desktop verwenden.');
+$('#b-save').onclick=()=>h?(dirty=true,save()):download();$('#b-load').onclick=async()=>{if(dirty)await save();if(dirty&&!confirm('Ungespeicherte Änderungen gehen verloren. Trotzdem neu laden?'))return;await load()};
+$('#fi').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f||(dirty&&!confirm('Ungespeicherte Änderungen gehen verloren. Trotzdem Datei öffnen?')))return;try{const d=parse(await f.arrayBuffer());for(const k in S)db[k]=d[k];fname=f.name;dirty=false;err='';render()}catch(x){err='Datei konnte nicht gelesen werden – '+x.message;status()}};
+function theme(){const t=localStorage.th||'auto';document.documentElement.dataset.t=t=='auto'?(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'):t}
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',theme);
+addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+$('#st').addEventListener('click',e=>{if(e.target.id=='perm')grant()});
+async function grant(){try{if(await h.requestPermission({mode:'readwrite'})=='granted')await load()}catch(e){err='Zugriff nicht möglich – '+e.message;needPerm=false;status()}}
+async function sync(){if(!h||needPerm||saving)return;try{const f=await h.getFile();if(f.lastModified>lastMod+1){const ch=merge(parse(await f.arrayBuffer()));lastMod=f.lastModified;if(ch)safeRender()}}catch{}}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});
+(async()=>{if(location.protocol=='https:'&&navigator.serviceWorker)navigator.serviceWorker.register('sw.js').catch(()=>{});theme();render();loadFx();if(!window.XLSX)return;
+ try{h=await idb('get');if(h){fname=h.name;if(await h.queryPermission({mode:'readwrite'})=='granted')await load();else{needPerm=true;status()}}}catch{}})();
+</script></body></html>
